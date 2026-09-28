@@ -23,18 +23,22 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Set up Android SDK & NDK
+      # Configure Android SDK without requiring deprecated 'tools' package
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 11.0
 
-      - name: Install NDK r25b and Build Tools
+      - name: Accept SDK Licenses & Install NDK / CMake
         run: |
-          ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "ndk;25.2.9519653" "cmake;3.22.1"
+          yes | sdkmanager --licenses
+          sdkmanager "ndk;25.2.9519653" "cmake;3.22.1" "build-tools;33.0.2"
 
       - name: Auto-Bundle minetest_game into Assets
         run: |
           mkdir -p android/assets/games/
           if [ ! -d "android/assets/games/minetest_game" ]; then
-            git clone --depth 1 https://github.com/minetest/minetest_game.0.4 android/assets/games/minetest_game
+            git clone --depth 1 --branch 0.4.10 https://github.com/minetest/minetest_game.git android/assets/games/minetest_game
           fi
 
       - name: Build Android APK
