@@ -73,7 +73,11 @@ jobs:
               -DCMAKE_TOOLCHAIN_FILE=$ANDROID_HOME/ndk/25.2.9519653/build/cmake/android.toolchain.cmake \
               -DANDROID_ABI="$ABI" \
               -DANDROID_PLATFORM=android-21 \
-              -DCMAKE_BUILD_TYPE=Release
+              -DCMAKE_BUILD_TYPE=Release \
+              -DENABLE_SOUND=0 \
+              -DENABLE_CURL=0 \
+              -DENABLE_GETTEXT=0 \
+              -DENABLE_GLES=1
             
             cmake --build "$BUILD_DIR" --parallel $(nproc)
             
