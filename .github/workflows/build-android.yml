@@ -1,55 +1,4 @@
-name: Build ExA Android Engine
-
-on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Unzip Source Code Package
-        run: |
-          if [ -f "ExA-Engine-0.4.10.zip" ]; then
-            echo "Unzipping ExA-Engine-0.4.10.zip..."
-            unzip -q ExA-Engine-0.4.10.zip
-          elif [ -f "*.zip" ]; then
-            echo "Unzipping zip package..."
-            unzip -q *.zip
-          fi
-
-      - name: Install Android NDK, CMake & Ninja
-        run: |
-          mkdir -p "$ANDROID_HOME/licenses"
-          printf "24831570a01db03b016143a4a5109d93092ec924\n504667f4c057d4132ed69e45aa967c6d6537e750\n84831b9409646a918e30573bab4c9c91346d8abd\n" > "$ANDROID_HOME/licenses/android-sdk-license"
-          printf "84831b9409646a918e30573bab4c9c91346d8abd\n" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;25.2.9519653" "cmake;3.22.1" "build-tools;33.0.2" "platforms;android-31"
-          sudo apt-get update && sudo apt-get install -y ninja-build
-
-      - name: Auto-Bundle minetest_game into Assets
-        run: |
-          mkdir -p android/assets/games/
-          if [ ! -d "android/assets/games/minetest_game" ]; then
-            git clone --depth 1 --branch 0.4.10 https://github.com/minetest/minetest_game.git android/assets/games/minetest_game
-          fi
-
-      - name: Build Native Engine Libraries for All ABIs
+      - name: Locate Irrlicht Headers and Build Engine
         run: |
           if [ -f "CMakeLists.txt" ]; then
             SRC_DIR="$(pwd)"
@@ -59,7 +8,14 @@ jobs:
             SRC_DIR=$(find . -maxdepth 2 -name "CMakeLists.txt" | head -n 1 | xargs dirname | xargs readlink -f)
           fi
 
+          # Find Irrlicht include dir if bundled inside source tree
+          IRR_INC=$(find "$SRC_DIR" -type d -name "include" | grep -i "irrlicht" | head -n 1)
+          if [ -z "$IRR_INC" ]; then
+            IRR_INC="$SRC_DIR/lib/irrlicht/include"
+          fi
+
           echo "Found CMakeLists.txt at: $SRC_DIR"
+          echo "Using Irrlicht Include Dir: $IRR_INC"
 
           ABIS=("arm64-v8a" "armeabi-v7a" "x86" "x86_64")
 
@@ -81,7 +37,8 @@ jobs:
               -DENABLE_GLES=1 \
               -DENABLE_SOUND=0 \
               -DENABLE_CURL=0 \
-              -DENABLE_GETTEXT=0
+              -DENABLE_GETTEXT=0 \
+              -DIRRLICHT_INCLUDE_DIR="$IRR_INC"
             
             cmake --build "$BUILD_DIR" --parallel $(nproc)
             
@@ -89,12 +46,4 @@ jobs:
             find "$BUILD_DIR" -name "libexa.so" -exec cp {} "android/libs/$ABI/" \; || true
             find "$BUILD_DIR" -name "lib*.so" -exec cp {} "android/libs/$ABI/" \; || true
           done
-
-      - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ExA-Engine-MultiABI-Binaries
-          path: |
-            android/libs/*/*.so
-            build-android-*/**/*.so
-            
+          
