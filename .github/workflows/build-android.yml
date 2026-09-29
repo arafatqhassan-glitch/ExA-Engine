@@ -33,10 +33,11 @@ jobs:
             unzip -q *.zip
           fi
 
-      - name: Install Android NDK & Build Dependencies
+      - name: Install Android NDK, CMake & Ninja
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;25.2.9519653" "cmake;3.22.1" "build-tools;33.0.2" "platforms;android-31"
+          sudo apt-get update && sudo apt-get install -y ninja-build
 
       - name: Auto-Bundle minetest_game into Assets
         run: |
@@ -45,33 +46,48 @@ jobs:
             git clone --depth 1 --branch 0.4.10 https://github.com/minetest/minetest_game.git android/assets/games/minetest_game
           fi
 
-      - name: Build Native Engine Libraries (ARM64, ARMv7, x86, x86_64)
+      - name: Build Native Engine Libraries for All ABIs (ARM64, ARMv7, x86, x86_64)
         run: |
-          mkdir -p build-android
-          cd build-android
-          
-          # Detect where CMakeLists.txt is after unzipping
-          if [ -f "../CMakeLists.txt" ]; then
-            SRC_DIR=".."
-          elif [ -f "../src/CMakeLists.txt" ]; then
-            SRC_DIR="../src"
+          # Locate source directory containing CMakeLists.txt
+          if [ -f "CMakeLists.txt" ]; then
+            SRC_DIR="$(pwd)"
+          elif [ -f "src/CMakeLists.txt" ]; then
+            SRC_DIR="$(pwd)/src"
           else
-            SRC_DIR=$(find .. -maxdepth 2 -name "CMakeLists.txt" | head -n 1 | xargs dirname)
+            SRC_DIR=$(find . -maxdepth 2 -name "CMakeLists.txt" | head -n 1 | xargs dirname | xargs readlink -f)
           fi
 
-          cmake "$SRC_DIR" \
-            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_HOME/ndk/25.2.9519653/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI="arm64-v8a;armeabi-v7a;x86;x86_64" \
-            -DANDROID_PLATFORM=android-21 \
-            -DCMAKE_BUILD_TYPE=Release
-          make -j$(nproc)
+          echo "Found CMakeLists.txt at: $SRC_DIR"
+
+          ABIS=("arm64-v8a" "armeabi-v7a" "x86" "x86_64")
+
+          for ABI in "${ABIS[@]}"; do
+            echo "=========================================="
+            echo " Building native library for ABI: $ABI "
+            echo "=========================================="
+            
+            BUILD_DIR="build-android-$ABI"
+            mkdir -p "$BUILD_DIR"
+            
+            cmake -B "$BUILD_DIR" -S "$SRC_DIR" -G "Ninja" \
+              -DCMAKE_TOOLCHAIN_FILE=$ANDROID_HOME/ndk/25.2.9519653/build/cmake/android.toolchain.cmake \
+              -DANDROID_ABI="$ABI" \
+              -DANDROID_PLATFORM=android-21 \
+              -DCMAKE_BUILD_TYPE=Release
+            
+            cmake --build "$BUILD_DIR" --parallel $(nproc)
+            
+            # Copy compiled libraries into android/libs structure
+            mkdir -p "android/libs/$ABI"
+            find "$BUILD_DIR" -name "libexa.so" -exec cp {} "android/libs/$ABI/" \; || true
+            find "$BUILD_DIR" -name "lib*.so" -exec cp {} "android/libs/$ABI/" \; || true
+          done
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ExA-Engine-MultiABI-Binaries
           path: |
-            build-android/bin/*
-            build-android/lib*.so
-            build-android/**/libexa.so
+            android/libs/*/*.so
+            build-android-*/**/*.so
             
