@@ -46,7 +46,7 @@ jobs:
             git clone --depth 1 --branch 0.4.10 https://github.com/minetest/minetest_game.git android/assets/games/minetest_game
           fi
 
-      - name: Build Native Engine Libraries for All ABIs (ARM64, ARMv7, x86, x86_64)
+      - name: Build Native Engine Libraries for All ABIs
         run: |
           # Locate source directory containing CMakeLists.txt
           if [ -f "CMakeLists.txt" ]; then
@@ -74,14 +74,16 @@ jobs:
               -DANDROID_ABI="$ABI" \
               -DANDROID_PLATFORM=android-21 \
               -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_CLIENT=0 \
+              -DBUILD_SERVER=1 \
+              -DENABLE_GLES=1 \
               -DENABLE_SOUND=0 \
               -DENABLE_CURL=0 \
-              -DENABLE_GETTEXT=0 \
-              -DENABLE_GLES=1
+              -DENABLE_GETTEXT=0
             
             cmake --build "$BUILD_DIR" --parallel $(nproc)
             
-            # Copy compiled libraries into android/libs structure
+            # Copy compiled shared/static outputs
             mkdir -p "android/libs/$ABI"
             find "$BUILD_DIR" -name "libexa.so" -exec cp {} "android/libs/$ABI/" \; || true
             find "$BUILD_DIR" -name "lib*.so" -exec cp {} "android/libs/$ABI/" \; || true
